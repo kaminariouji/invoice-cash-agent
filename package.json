@@ -1,0 +1,14 @@
+{
+  "name": "invoice-cash-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "An AI agent that turns a pasted invoice into a real PayPal invoice, chases it, and reconciles the payment - with a decision trail a human can audit.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "demo": "node scripts/demo.mjs",
+    "test": "node --test"
+  },
+  "license": "MIT"
+}
