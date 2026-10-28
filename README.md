@@ -19,6 +19,8 @@ paste invoice text
  hash-chained decision trail (every step commits to the one before it)
 ```
 
+![Invoice Cash Agent reading an invoice with the model, then verifying the total](docs/screenshot.png)
+
 ## Why it is built this way
 
 | Risk | What the agent does |
