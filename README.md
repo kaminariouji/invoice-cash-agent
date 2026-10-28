@@ -65,6 +65,24 @@ disagree, the invoice is blocked and the block names both numbers. So the model 
 but it cannot set a price - and it cannot argue with the policy, because the policy runs
 after it and never calls it.
 
+Measured on a real invoice shape (`npm start`, same document, both readers):
+
+```
+ACME-1042 / billing@acme.example
+Design sprint .............. 1,200.00
+Landing page copy (x2) ..... 450.00 ea
+Net 30 - total 2,100.00
+```
+
+| Reader | items read | total | verdict |
+| --- | --- | --- | --- |
+| parser | 2, the `(x2)` missed | 1,650.00 | BLOCK 45 - does not add up |
+| model | 2, quantity read | 2,100.00 | SEND 0 |
+
+The model did not "fix" the total. It read the quantity, and the same verifier recomputed
+the total from the items and found it matched. Had it returned 1,650.00, the invoice would
+still have been blocked.
+
 Configure any OpenAI-compatible endpoint:
 
 ```bash
