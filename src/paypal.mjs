@@ -122,5 +122,33 @@ export function createPayPal(env = process.env) {
     return call('/v2/checkout/orders/' + orderId + '/capture', { method: 'POST', body: '{}' });
   }
 
-  return { mode, createInvoice, sendInvoice, getInvoice, createOrder, captureOrder };
+  // Webhook signature check. PayPal signs every notification; without this an attacker
+  // could POST "payment received" and the agent would close an invoice nobody paid.
+  async function verifyWebhook(headers, rawBody) {
+    if (mode === 'mock') return { ok: true, mode: 'mock', verification_status: 'MOCK' };
+    const webhookId = env.PAYPAL_WEBHOOK_ID || '';
+    if (!webhookId) return { ok: false, reason: 'PAYPAL_WEBHOOK_ID is not set' };
+    const h = (k) => headers[k] || headers[k.toLowerCase()] || '';
+    let event;
+    try { event = JSON.parse(rawBody); } catch { return { ok: false, reason: 'bad json' }; }
+    try {
+      const r = await call('/v1/notifications/verify-webhook-signature', {
+        method: 'POST',
+        body: JSON.stringify({
+          auth_algo: h('paypal-auth-algo'),
+          cert_url: h('paypal-cert-url'),
+          transmission_id: h('paypal-transmission-id'),
+          transmission_sig: h('paypal-transmission-sig'),
+          transmission_time: h('paypal-transmission-time'),
+          webhook_id: webhookId,
+          webhook_event: event,
+        }),
+      });
+      return { ok: r && r.verification_status === 'SUCCESS', mode: 'sandbox', verification_status: r && r.verification_status };
+    } catch (e) {
+      return { ok: false, reason: String(e.message || e), status: e.status || null };
+    }
+  }
+
+  return { mode, verifyWebhook, createInvoice, sendInvoice, getInvoice, createOrder, captureOrder };
 }

@@ -41,6 +41,7 @@ Two modes, same interface:
   * `POST /v1/oauth2/token` (client credentials, cached)
   * `POST /v2/invoicing/invoices` then `POST /v2/invoicing/invoices/{id}/send`
   * `POST /v2/checkout/orders` (intent `CAPTURE`) then `POST /v2/checkout/orders/{id}/capture`
+  * `POST /v1/notifications/verify-webhook-signature` before any notification is believed
 
 ```bash
 PAYPAL_MODE=sandbox PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm start
@@ -89,6 +90,7 @@ Demo output (abridged):
 | POST | `/api/invoice` | create + send the PayPal invoice for the last parsed document |
 | POST | `/api/order` | create the payment link |
 | POST | `/api/capture` | `{ orderId }` -> capture and produce the receipt note |
+| POST | `/api/webhook` | PayPal notification -> signature check, then record the payment in the trail |
 
 ## Configuration
 
@@ -98,16 +100,20 @@ Demo output (abridged):
 | `PAYPAL_MODE` | `mock` | `mock` or `sandbox` |
 | `PAYPAL_CLIENT_ID` | - | required when mode is `sandbox` |
 | `PAYPAL_CLIENT_SECRET` | - | required when mode is `sandbox` |
+| `PAYPAL_WEBHOOK_ID` | - | required to verify webhook signatures in `sandbox` |
+| `DATA_DIR` | `./data` | where the trail is written (`trail.jsonl`) |
 
 ## Limits, stated plainly
 
-* State lives in memory: restarting the process clears the trail. A durable trail belongs in
-  a store the client already trusts, and that is the next piece of work.
+* The trail is a single append-only file on one machine. It survives a restart (the demo
+  shows this), but it is not replicated, and two processes writing the same file would
+  interleave - running one instance is the supported shape.
 * The parser reads the common line shapes (label + amount, optional `N x` quantity, `Net N`
   terms, one total). It is deliberately conservative: a line it cannot read is skipped rather
   than guessed, and the printed-vs-computed mismatch check catches the fallout.
-* Payment reconciliation is capture-driven. Webhook reconciliation for payments that arrive
-  through the emailed invoice link is not wired yet.
+* Reconciliation covers capture plus signed webhooks. A notification is only believed after
+  PayPal's `verify-webhook-signature` answers `SUCCESS`; in `mock` mode that check is
+  short-circuited, which is the one place the two modes behave differently.
 * Single currency per document.
 
 ## Licence
