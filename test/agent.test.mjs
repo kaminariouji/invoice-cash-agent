@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseInvoice, decide, moneyToCents, appendTrail, verifyTrail, nudgeMessage } from '../src/agent.mjs';
+import { parseInvoice, decide, moneyToCents, appendTrail, verifyTrail, nudgeMessage, invoiceFromItems } from '../src/agent.mjs';
 
 const SAMPLE = [
   'Invoice #ACME-1042',
@@ -30,6 +30,11 @@ test('line items are read and multiplied by quantity', () => {
   assert.equal(inv.items.length, 3);
   assert.equal(inv.items[1].quantity, 2);
   assert.equal(inv.totalCents, 120000 + 90000 + 6000);
+});
+
+test('the item name does not keep the currency marker or the dash', () => {
+  const inv = parseInvoice(SAMPLE);
+  assert.deepEqual(inv.items.map(i => i.name), ['Design sprint', 'Landing page copy', 'Hosting reimbursement']);
 });
 
 test('declared total is compared with the computed one', () => {
@@ -100,6 +105,41 @@ test('a bare integer such as net 30 is not mistaken for an amount', () => {
   assert.equal(inv.items.length, 1);
   assert.equal(inv.dueDays, 30);
   assert.equal(inv.totalCents, 90000);
+});
+
+// The grid is where a human fixes what a reader got wrong. These tests pin the rule that
+// a correction is verified exactly like a first read - no special case, no bypass.
+test('a human correction is verified like any other read', () => {
+  const wrong = invoiceFromItems({
+    invoiceNumber: 'ACME-1042',
+    clientEmail: 'billing@acme.example',
+    items: [{ name: 'Design sprint', quantity: 1, unit: 1200 }, { name: 'Landing page copy', quantity: 1, unit: 450 }],
+    declaredCents: 210000,
+  });
+  assert.equal(wrong.totalCents, 165000);
+  assert.equal(decide(wrong, []).verdict, 'BLOCK');
+
+  const fixed = invoiceFromItems({
+    invoiceNumber: 'ACME-1042',
+    clientEmail: 'billing@acme.example',
+    items: [{ name: 'Design sprint', quantity: 1, unit: 1200 }, { name: 'Landing page copy', quantity: 2, unit: 450 }],
+    declaredCents: 210000,
+  });
+  assert.equal(fixed.totalCents, 210000);
+  assert.equal(decide(fixed, []).verdict, 'SEND');
+  assert.equal(fixed.engine, 'grid');
+});
+
+test('a row without a name or with a negative unit is dropped, not billed', () => {
+  const inv = invoiceFromItems({ items: [{ name: '', unit: 10 }, { name: 'ok', unit: -5 }, { name: 'real', quantity: 3, unit: 100 }] });
+  assert.equal(inv.items.length, 1);
+  assert.equal(inv.totalCents, 30000);
+});
+
+test('an unknown printed total is reported as unknown, not as a match', () => {
+  const inv = invoiceFromItems({ items: [{ name: 'x', quantity: 1, unit: 10 }] });
+  assert.equal(inv.declaredCents, null);
+  assert.equal(inv.totalMatchesDeclared, null);
 });
 
 test('nudge tone escalates with days late', () => {

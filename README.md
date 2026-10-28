@@ -97,8 +97,21 @@ LLM_BASE_URL=https://your-endpoint/v1 LLM_API_KEY=... LLM_MODEL=... npm start
   (`/v2/checkout/orders`, `/capture`), and `/v1/notifications/verify-webhook-signature`.
 * **Node 20 built-ins only** - no runtime dependencies, so the judges' `npm start` cannot
   fail on an install.
+* **AG Grid Community 31** - the editable line-item grid, loaded from a CDN with a
+  read-only fallback.
 * **The model** - any OpenAI-compatible chat completion endpoint. The demo and the tests
   run without one; the model path is what turns a messy document into line items.
+
+## The grid
+
+Line items land in an **AG Grid Community** table and every cell is editable. That is the
+human half of the loop: a reader gets the document mostly right, a person fixes the rest, and
+every edit posts to `/api/recompute` - which recomputes the total and runs the same policy
+again. Correcting a quantity can move an invoice from BLOCK to SEND; breaking the arithmetic
+moves it straight back, with both numbers named.
+
+The grid loads from a CDN and falls back to a read-only table if it cannot, so the page still
+works offline. Only the Node side is dependency-free.
 
 ## Run it
 
@@ -138,6 +151,7 @@ Demo output (abridged):
 | GET | `/api/health` | mode + trail verification |
 | GET | `/api/trail` | full decision trail and its verification result |
 | POST | `/api/extract` | `{ text }` -> parsed invoice, policy decision, draft messages |
+| POST | `/api/recompute` | `{ items, declaredCents, ... }` -> the grid's edit, verified like any other read |
 | POST | `/api/invoice` | create + send the PayPal invoice for the last parsed document |
 | POST | `/api/order` | create the payment link |
 | POST | `/api/capture` | `{ orderId }` -> capture and produce the receipt note |

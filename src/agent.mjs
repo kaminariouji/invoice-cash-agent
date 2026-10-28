@@ -44,7 +44,9 @@ export function parseInvoice(text) {
     if (/total|subtotal|tax|vat|balance|due/i.test(label)) continue;
     const qtyMatch = label.match(/^(\d{1,3})\s*[x\u00d7]\s*/i);
     const quantity = qtyMatch ? Number(qtyMatch[1]) : 1;
-    const name = qtyMatch ? label.slice(qtyMatch[0].length).trim() : label;
+    const raw = qtyMatch ? label.slice(qtyMatch[0].length).trim() : label;
+    // "Design sprint - 1,200.00 USD" leaves "- USD" behind once the amount is removed.
+    const name = raw.replace(/\s*[-\u2013\u2014]?\s*(?:USD|US\$|\$)\s*$/i, '').replace(/[\s\-\u2013\u2014]+$/, '').trim();
     if (!name) continue;
     items.push({ name: name.slice(0, 80), quantity, unit: moneyToCents(amount) / 100 });
   }
@@ -62,6 +64,37 @@ export function parseInvoice(text) {
     totalCents,
     declaredCents,
     totalMatchesDeclared: declaredCents === null ? null : declaredCents === totalCents,
+  };
+}
+
+// The human half of the loop. The grid is where a person corrects what a reader got
+// wrong; every correction goes back through the same verifier, so a fixed total is
+// still checked against the total the document printed.
+export function invoiceFromItems(input) {
+  const items = [];
+  for (const it of Array.isArray(input && input.items) ? input.items : []) {
+    const name = it && typeof it.name === 'string' ? it.name.trim() : '';
+    const unit = Number(it && it.unit);
+    const quantity = Number(it && it.quantity);
+    if (!name || !Number.isFinite(unit) || unit < 0) continue;
+    items.push({ name: name.slice(0, 80), quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1, unit });
+  }
+
+  const totalCents = items.reduce((s, i) => s + Math.round(i.quantity * i.unit * 100), 0);
+  const declared = Number(input && input.declaredCents);
+  const declaredCents = Number.isFinite(declared) ? Math.round(declared) : null;
+  const dueDays = Number(input && input.dueDays);
+
+  return {
+    currency: (input && typeof input.currency === 'string' && input.currency.trim()) || 'USD',
+    clientEmail: (input && typeof input.clientEmail === 'string' && input.clientEmail.includes('@')) ? input.clientEmail.trim().toLowerCase() : null,
+    invoiceNumber: (input && typeof input.invoiceNumber === 'string' && input.invoiceNumber.trim()) || 'INV-UNKNOWN',
+    dueDays: Number.isFinite(dueDays) ? Math.min(120, Math.max(0, Math.round(dueDays))) : 14,
+    items,
+    totalCents,
+    declaredCents,
+    totalMatchesDeclared: declaredCents === null ? null : declaredCents === totalCents,
+    engine: 'grid',
   };
 }
 

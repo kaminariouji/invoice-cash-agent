@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createPayPal } from './paypal.mjs';
 import { createStore } from './store.mjs';
-import { parseInvoice, decide, thanksMessage, nudgeMessage } from './agent.mjs';
+import { parseInvoice, decide, thanksMessage, nudgeMessage, invoiceFromItems } from './agent.mjs';
 import { extractWithLLM, llmConfigured } from './llm.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -57,6 +57,16 @@ const routes = {
     store.append({ step: 'extract', engine: invoice.engine || 'parser', invoiceNumber: invoice.invoiceNumber, totalCents: invoice.totalCents, verdict: decision.verdict, score: decision.score });
     state.lastInvoice = invoice;
     return json(res, 200, { invoice, decision, nudge: nudgeMessage(invoice, 5), thanks: thanksMessage(invoice) });
+  },
+
+  // Every cell edit in the grid comes back here: the same verifier runs on the corrected
+  // numbers, so a human fix cannot smuggle in a total that does not add up.
+  'POST /api/recompute': async (req, res) => {
+    const body = await readBody(req);
+    const invoice = invoiceFromItems(body);
+    const decision = decide(invoice, state.invoices);
+    state.lastInvoice = invoice;
+    return json(res, 200, { invoice, decision });
   },
 
   'POST /api/invoice': async (req, res) => {

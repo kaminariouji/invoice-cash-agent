@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Invoice Cash Agent</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.4/styles/ag-grid.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.4/styles/ag-theme-quartz.css">
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.4/dist/ag-grid-community.min.js" onerror="window.__noGrid=true"></script>
 <style>
   :root{--bg:#0b0e14;--panel:#121722;--line:#1e2635;--fg:#e6edf7;--dim:#8b98ab;--pos:#3ddc97;--warn:#ffb454;--neg:#ff6b6b;--acc:#6ea8ff}
   *{box-sizing:border-box}
@@ -11,22 +14,24 @@
   header{padding:20px 26px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:baseline}
   h1{font-size:17px;margin:0;letter-spacing:.2px}
   .badge{font:11px ui-monospace,monospace;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
-  main{display:grid;grid-template-columns:1.1fr .9fr;gap:18px;padding:20px 26px;max-width:1180px}
+  main{display:grid;grid-template-columns:1.15fr .85fr;gap:18px;padding:20px 26px;max-width:1240px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
   .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--dim);margin:0 0 10px}
-  textarea{width:100%;height:210px;background:#0d121b;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:12px;font:13px/1.5 ui-monospace,monospace;resize:vertical}
+  textarea{width:100%;height:150px;background:#0d121b;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:12px;font:13px/1.5 ui-monospace,monospace;resize:vertical}
   button{background:var(--acc);color:#08111f;border:0;border-radius:8px;padding:9px 14px;font-weight:650;cursor:pointer}
   button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line);font-weight:500}
   button:disabled{opacity:.45;cursor:not-allowed}
-  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-  table{width:100%;border-collapse:collapse;font:12.5px ui-monospace,monospace}
-  td,th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left}
-  th{color:var(--dim);font-weight:500}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
   .v-SEND{color:var(--pos)}.v-REVIEW{color:var(--warn)}.v-BLOCK{color:var(--neg)}
   .kv{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line)}
   .kv span:first-child{color:var(--dim)}
-  pre{white-space:pre-wrap;word-break:break-word;background:#0d121b;border:1px solid var(--line);border-radius:8px;padding:10px;font:12px/1.5 ui-monospace,monospace;max-height:220px;overflow:auto}
+  pre{white-space:pre-wrap;word-break:break-word;background:#0d121b;border:1px solid var(--line);border-radius:8px;padding:10px;font:12px/1.5 ui-monospace,monospace;max-height:200px;overflow:auto}
   .muted{color:var(--dim)}
+  #grid{height:260px;width:100%;margin-top:12px;--ag-background-color:#0d121b;--ag-header-background-color:#121722;--ag-odd-row-background-color:#0f141e;--ag-border-color:#1e2635;--ag-foreground-color:#e6edf7;--ag-header-foreground-color:#8b98ab;--ag-row-hover-color:#16202f;--ag-font-size:13px}
+  table{width:100%;border-collapse:collapse;font:12.5px ui-monospace,monospace}
+  td,th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left}
+  th{color:var(--dim);font-weight:500}
+  .hint{font-size:12px;color:var(--dim);margin:8px 0 0}
   @media(max-width:900px){main{grid-template-columns:1fr}}
 </style>
 </head>
@@ -59,7 +64,9 @@ Total 2,160.00 USD</textarea>
       <button id="capture" class="ghost" disabled>Capture</button>
       <button id="webhook" class="ghost">Simulate paid webhook</button>
     </div>
-    <div id="out" style="margin-top:14px"></div>
+    <div id="grid" class="ag-theme-quartz-dark"></div>
+    <p class="hint" id="hint">Line items land here. Edit any cell — the total is recomputed and the policy runs again.</p>
+    <div id="out" style="margin-top:12px"></div>
   </section>
 
   <section class="card">
@@ -71,11 +78,92 @@ Total 2,160.00 USD</textarea>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
-let last = null;
+let last = null, gridApi = null, timer = null;
 
 async function api(path, body) {
   const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
   return { status: r.status, body: await r.json() };
+}
+
+function renderDecision(inv, d) {
+  $('decision').innerHTML =
+    '<div class="kv"><span>verdict</span><b class="v-' + d.verdict + '">' + d.verdict + '</b></div>' +
+    '<div class="kv"><span>score</span><b>' + d.score + '</b></div>' +
+    '<div class="kv"><span>client</span><b>' + (inv.clientEmail || '—') + '</b></div>' +
+    '<div class="kv"><span>invoice</span><b>' + inv.invoiceNumber + '</b></div>' +
+    '<div class="kv"><span>total</span><b>' + (inv.totalCents / 100).toFixed(2) + ' ' + inv.currency + '</b></div>' +
+    '<div class="kv"><span>printed</span><b>' + (inv.declaredCents === null ? '—' : (inv.declaredCents / 100).toFixed(2)) + '</b></div>' +
+    (d.reasons.length ? '<ul style="margin:10px 0 0 16px;padding:0;color:#ffb454">' + d.reasons.map(r => '<li>' + r + '</li>').join('') + '</ul>' : '<p class="muted" style="margin:10px 0 0">No policy flags.</p>');
+  $('invoice').disabled = d.verdict === 'BLOCK';
+  $('order').disabled = d.verdict === 'BLOCK';
+  $('capture').disabled = true;
+}
+
+function fallbackTable(items) {
+  $('grid').innerHTML = '<table><tr><th>item</th><th>qty</th><th>unit</th><th>line</th></tr>' +
+    items.map(i => '<tr><td>' + i.name + '</td><td>' + i.quantity + '</td><td>' + i.unit.toFixed(2) + '</td><td>' + (i.quantity * i.unit).toFixed(2) + '</td></tr>').join('') +
+    '</table>';
+}
+
+const COLS = [
+  { field: 'name', headerName: 'item', flex: 3, editable: true },
+  { field: 'quantity', headerName: 'qty', width: 90, editable: true, cellEditor: 'agNumberCellEditor',
+    valueParser: (p) => { const n = Number(p.newValue); return Number.isFinite(n) && n > 0 ? n : 1; } },
+  { field: 'unit', headerName: 'unit', width: 120, editable: true, cellEditor: 'agNumberCellEditor',
+    valueFormatter: (p) => (Number(p.value) || 0).toFixed(2),
+    valueParser: (p) => { const n = Number(p.newValue); return Number.isFinite(n) && n >= 0 ? n : 0; } },
+  { headerName: 'line', width: 120, valueGetter: (p) => (Number(p.data.quantity) || 0) * (Number(p.data.unit) || 0),
+    valueFormatter: (p) => (Number(p.value) || 0).toFixed(2) },
+];
+
+function ensureGrid() {
+  if (gridApi || !window.agGrid || window.__noGrid) return false;
+  gridApi = agGrid.createGrid($('grid'), {
+    columnDefs: COLS,
+    rowData: [],
+    defaultColDef: { sortable: true, resizable: true },
+    singleClickEdit: true,
+    stopEditingWhenCellsLoseFocus: true,
+    headerHeight: 32,
+    rowHeight: 30,
+    onCellValueChanged: () => {
+      clearTimeout(timer);
+      timer = setTimeout(recompute, 350);
+    },
+  });
+  return true;
+}
+
+function rows() {
+  const out = [];
+  gridApi.forEachNode((n) => out.push({ name: n.data.name, quantity: n.data.quantity, unit: n.data.unit }));
+  return out;
+}
+
+async function recompute() {
+  if (!last || !gridApi) return;
+  const inv = last.invoice;
+  const { body } = await api('/api/recompute', {
+    items: rows(),
+    declaredCents: inv.declaredCents,
+    currency: inv.currency,
+    clientEmail: inv.clientEmail,
+    invoiceNumber: inv.invoiceNumber,
+    dueDays: inv.dueDays,
+  });
+  if (body.error) return;
+  last.invoice = body.invoice;
+  renderDecision(body.invoice, body.decision);
+}
+
+function showItems(inv) {
+  if (ensureGrid()) {
+    gridApi.setGridOption('rowData', inv.items.map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit })));
+    $('hint').textContent = 'Edit any cell — the total is recomputed and the policy runs again.';
+  } else {
+    fallbackTable(inv.items);
+    $('hint').textContent = 'Grid library unavailable (offline?) — showing a read-only table.';
+  }
 }
 
 async function refresh() {
@@ -91,20 +179,9 @@ $('extract').onclick = async () => {
   const { body } = await api('/api/extract', { text: $('text').value, engine: $('engine').value });
   if (body.error) { $('out').innerHTML = '<span class="v-BLOCK">' + body.error + '</span>'; return; }
   last = body;
-  const inv = body.invoice, d = body.decision;
-  $('decision').innerHTML =
-    '<div class="kv"><span>verdict</span><b class="v-' + d.verdict + '">' + d.verdict + '</b></div>' +
-    '<div class="kv"><span>score</span><b>' + d.score + '</b></div>' +
-    '<div class="kv"><span>client</span><b>' + (inv.clientEmail || '—') + '</b></div>' +
-    '<div class="kv"><span>invoice</span><b>' + inv.invoiceNumber + '</b></div>' +
-    '<div class="kv"><span>total</span><b>' + (inv.totalCents / 100).toFixed(2) + ' ' + inv.currency + '</b></div>' +
-    (d.reasons.length ? '<ul style="margin:10px 0 0 16px;padding:0;color:#ffb454">' + d.reasons.map(r => '<li>' + r + '</li>').join('') + '</ul>' : '<p class="muted" style="margin:10px 0 0">No policy flags.</p>');
-  $('out').innerHTML = '<table><tr><th>item</th><th>qty</th><th>unit</th></tr>' +
-    inv.items.map(i => '<tr><td>' + i.name + '</td><td>' + i.quantity + '</td><td>' + i.unit.toFixed(2) + '</td></tr>').join('') +
-    '</table><p class="muted" style="margin:10px 0 0">Nudge copy: ' + body.nudge + '</p>';
-  $('invoice').disabled = d.verdict === 'BLOCK';
-  $('order').disabled = d.verdict === 'BLOCK';
-  $('capture').disabled = true;
+  showItems(body.invoice);
+  renderDecision(body.invoice, body.decision);
+  $('out').innerHTML = '<p class="muted" style="margin:0">Example nudge if this were 5 days late: ' + body.nudge + '</p>';
   refresh();
 };
 
