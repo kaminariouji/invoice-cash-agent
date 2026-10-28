@@ -117,7 +117,9 @@ const COLS = [
 ];
 
 function ensureGrid() {
-  if (gridApi || !window.agGrid || window.__noGrid) return false;
+  if (gridApi) return true;
+  if (!window.agGrid || window.__noGrid) return false;
+  $('grid').innerHTML = '';
   gridApi = agGrid.createGrid($('grid'), {
     columnDefs: COLS,
     rowData: [],
@@ -156,8 +158,22 @@ async function recompute() {
   renderDecision(body.invoice, body.decision);
 }
 
-function showItems(inv) {
-  if (ensureGrid()) {
+// The grid script comes from a CDN: it may still be in flight when the first document
+// arrives. Wait for it briefly, then fall back to a plain table rather than show nothing.
+function waitForGrid(ms) {
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    const tick = () => {
+      if (ensureGrid()) return resolve(true);
+      if (Date.now() - t0 > ms) return resolve(false);
+      setTimeout(tick, 200);
+    };
+    tick();
+  });
+}
+
+async function showItems(inv) {
+  if (ensureGrid() || await waitForGrid(6000)) {
     gridApi.setGridOption('rowData', inv.items.map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit })));
     $('hint').textContent = 'Edit any cell — the total is recomputed and the policy runs again.';
   } else {
@@ -176,10 +192,20 @@ async function refresh() {
 }
 
 $('extract').onclick = async () => {
-  const { body } = await api('/api/extract', { text: $('text').value, engine: $('engine').value });
+  const btn = $('extract');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Reading…';
+  let body;
+  try {
+    ({ body } = await api('/api/extract', { text: $('text').value, engine: $('engine').value }));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
   if (body.error) { $('out').innerHTML = '<span class="v-BLOCK">' + body.error + '</span>'; return; }
   last = body;
-  showItems(body.invoice);
+  await showItems(body.invoice);
   renderDecision(body.invoice, body.decision);
   $('out').innerHTML = '<p class="muted" style="margin:0">Example nudge if this were 5 days late: ' + body.nudge + '</p>';
   refresh();
