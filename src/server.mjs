@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { createPayPal } from './paypal.mjs';
 import { createStore } from './store.mjs';
 import { parseInvoice, decide, thanksMessage, nudgeMessage } from './agent.mjs';
+import { extractWithLLM, llmConfigured } from './llm.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ui = readFileSync(join(here, '..', 'public', 'index.html'), 'utf8');
@@ -35,15 +36,25 @@ const routes = {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     res.end(ui);
   },
-  'GET /api/health': (req, res) => json(res, 200, { ok: true, mode: paypal.mode, trail: store.verify() }),
+  'GET /api/health': (req, res) => json(res, 200, { ok: true, mode: paypal.mode, llm: llmConfigured(), trail: store.verify() }),
   'GET /api/trail': (req, res) => json(res, 200, { trail: store.all(), verify: store.verify() }),
 
   'POST /api/extract': async (req, res) => {
-    const { text } = await readBody(req);
+    const { text, engine } = await readBody(req);
     if (!text || typeof text !== 'string') return json(res, 400, { error: 'text required' });
-    const invoice = parseInvoice(text);
+    let invoice;
+    if (engine === 'llm') {
+      if (!llmConfigured()) return json(res, 400, { error: 'model not configured', detail: 'set LLM_BASE_URL, LLM_API_KEY and LLM_MODEL' });
+      try {
+        invoice = await extractWithLLM(text);
+      } catch (e) {
+        return json(res, 502, { error: 'model read failed', detail: String(e.message || e) });
+      }
+    } else {
+      invoice = parseInvoice(text);
+    }
     const decision = decide(invoice, state.invoices);
-    store.append({ step: 'extract', invoiceNumber: invoice.invoiceNumber, totalCents: invoice.totalCents, verdict: decision.verdict, score: decision.score });
+    store.append({ step: 'extract', engine: invoice.engine || 'parser', invoiceNumber: invoice.invoiceNumber, totalCents: invoice.totalCents, verdict: decision.verdict, score: decision.score });
     state.lastInvoice = invoice;
     return json(res, 200, { invoice, decision, nudge: nudgeMessage(invoice, 5), thanks: thanksMessage(invoice) });
   },

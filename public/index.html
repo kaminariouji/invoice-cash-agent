@@ -35,6 +35,7 @@
   <h1>Invoice Cash Agent</h1>
   <span class="badge" id="mode">paypal: …</span>
   <span class="badge" id="chain">trail: …</span>
+  <span class="badge" id="llm">model: …</span>
 </header>
 <main>
   <section class="card">
@@ -48,10 +49,15 @@ Design sprint - 1,200.00 USD
 Hosting reimbursement - 60.00 USD
 Total 2,160.00 USD</textarea>
     <div class="row">
+      <select id="engine" title="who reads the document" style="background:#0d121b;color:#e6edf7;border:1px solid #1e2635;border-radius:8px;padding:8px">
+        <option value="parser">read: parser</option>
+        <option value="llm">read: model</option>
+      </select>
       <button id="extract">Read and decide</button>
       <button id="invoice" class="ghost" disabled>Create PayPal invoice</button>
       <button id="order" class="ghost" disabled>Create pay link</button>
       <button id="capture" class="ghost" disabled>Capture</button>
+      <button id="webhook" class="ghost">Simulate paid webhook</button>
     </div>
     <div id="out" style="margin-top:14px"></div>
   </section>
@@ -76,12 +82,13 @@ async function refresh() {
   const h = await api('/api/health');
   $('mode').textContent = 'paypal: ' + h.body.mode;
   $('chain').textContent = 'trail: ' + (h.body.trail.ok ? 'verified ' + h.body.trail.length : 'BROKEN');
+  $('llm').textContent = 'model: ' + (h.body.llm ? 'configured' : 'not configured');
   const t = await api('/api/trail');
   $('trail').textContent = t.body.trail.map(r => r.hash.slice(0, 10) + '  ' + r.step + '  ' + JSON.stringify({ ...r, hash: undefined, prev: undefined })).join('\n') || 'genesis';
 }
 
 $('extract').onclick = async () => {
-  const { body } = await api('/api/extract', { text: $('text').value });
+  const { body } = await api('/api/extract', { text: $('text').value, engine: $('engine').value });
   if (body.error) { $('out').innerHTML = '<span class="v-BLOCK">' + body.error + '</span>'; return; }
   last = body;
   const inv = body.invoice, d = body.decision;
@@ -117,6 +124,16 @@ $('order').onclick = async () => {
 
 $('capture').onclick = async () => {
   const { body } = await api('/api/capture', { orderId: window.__order });
+  $('out').insertAdjacentHTML('afterbegin', '<pre>' + JSON.stringify(body, null, 1) + '</pre>');
+  refresh();
+};
+
+$('webhook').onclick = async () => {
+  const { body } = await api('/api/webhook', {
+    id: 'WH-EVT-' + Date.now(),
+    event_type: 'PAYMENT.CAPTURE.COMPLETED',
+    resource: { id: 'CAP-MOCK-' + Date.now(), amount: { value: '2100.00', currency_code: 'USD' } },
+  });
   $('out').insertAdjacentHTML('afterbegin', '<pre>' + JSON.stringify(body, null, 1) + '</pre>');
   refresh();
 };

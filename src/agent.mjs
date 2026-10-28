@@ -74,7 +74,8 @@ export function decide(invoice, history = []) {
   if (!invoice.items.length) { score += 60; reasons.push('no line items could be read'); }
   if (invoice.totalCents <= 0) { score += 60; reasons.push('total is zero or negative'); }
   if (invoice.totalMatchesDeclared === false) {
-    score += 30;
+    // A document whose own numbers do not add up is never sent, however it was read.
+    score += 45;
     reasons.push('line items add up to ' + (invoice.totalCents / 100).toFixed(2) + ' but the document says ' + (invoice.declaredCents / 100).toFixed(2));
   }
   if (invoice.totalCents > 250000) { score += 25; reasons.push('amount is above the 2,500.00 review threshold'); }

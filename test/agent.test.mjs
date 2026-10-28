@@ -43,6 +43,7 @@ test('mismatch between items and declared total is flagged', () => {
   const inv = parseInvoice(bad);
   assert.equal(inv.totalMatchesDeclared, false);
   const d = decide(inv, []);
+  assert.equal(d.verdict, 'BLOCK');
   assert.ok(d.reasons.some(r => r.includes('add up to')));
 });
 

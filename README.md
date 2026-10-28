@@ -49,6 +49,37 @@ PAYPAL_MODE=sandbox PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... npm start
 
 The rest of the app never knows which mode it is in.
 
+## Where the AI is
+
+Two readers, one verifier:
+
+| Reader | Used when | What it is trusted with |
+| --- | --- | --- |
+| `parseInvoice()` | default, no keys needed | nothing - it is plain code |
+| `extractWithLLM()` | `engine: "llm"` on `/api/extract` | naming the items and copying the numbers |
+
+A model is genuinely better at the messy cases: a forwarded email, an OCR dump, a PDF
+flattened into text. It returns the line items and the total it says the document printed.
+Then `normalise()` recomputes the total from those items and compares the two. If they
+disagree, the invoice is blocked and the block names both numbers. So the model may read,
+but it cannot set a price - and it cannot argue with the policy, because the policy runs
+after it and never calls it.
+
+Configure any OpenAI-compatible endpoint:
+
+```bash
+LLM_BASE_URL=https://your-endpoint/v1 LLM_API_KEY=... LLM_MODEL=... npm start
+```
+
+## Tools used
+
+* **PayPal REST** - Invoicing v2 (`/v2/invoicing/invoices`, `/send`), Orders v2
+  (`/v2/checkout/orders`, `/capture`), and `/v1/notifications/verify-webhook-signature`.
+* **Node 20 built-ins only** - no runtime dependencies, so the judges' `npm start` cannot
+  fail on an install.
+* **The model** - any OpenAI-compatible chat completion endpoint. The demo and the tests
+  run without one; the model path is what turns a messy document into line items.
+
 ## Run it
 
 ```bash
