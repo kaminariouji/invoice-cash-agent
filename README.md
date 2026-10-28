@@ -83,7 +83,7 @@ LLM_BASE_URL=https://your-endpoint/v1 LLM_API_KEY=... LLM_MODEL=... npm start
 ## Run it
 
 ```bash
-npm test     # 12 tests, no network, no credentials
+npm test     # 20 tests, no network, no credentials
 npm run demo # starts the server, drives the whole flow, prints every step
 npm start    # http://127.0.0.1:8788
 ```
