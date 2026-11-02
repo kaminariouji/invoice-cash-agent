@@ -70,6 +70,8 @@ export function createPayPal(env = process.env) {
     }
     return call('/v2/invoicing/invoices', {
       method: 'POST',
+      // Without this PayPal answers 201 with a bare self-link and the id only in Location.
+      headers: { Prefer: 'return=representation' },
       body: JSON.stringify({
         detail: { invoice_number: invoiceNumber, currency_code: currency, note },
         primary_recipients: [{ billing_info: { email_address: recipientEmail } }],
@@ -84,10 +86,17 @@ export function createPayPal(env = process.env) {
 
   async function sendInvoice(invoiceId) {
     if (mode === 'mock') return { status: 'SENT', invoice_id: invoiceId, mock: true };
-    return call('/v2/invoicing/invoices/' + invoiceId + '/send', {
+    // /send answers 202 with no body, so the status is read back instead of assumed.
+    await call('/v2/invoicing/invoices/' + invoiceId + '/send', {
       method: 'POST',
       body: JSON.stringify({ send_to_recipient: true, send_to_invoicer: false }),
     });
+    const inv = await call('/v2/invoicing/invoices/' + invoiceId);
+    return {
+      status: inv && inv.status,
+      invoice_id: invoiceId,
+      recipient_view_url: inv && inv.detail && inv.detail.metadata ? inv.detail.metadata.recipient_view_url : null,
+    };
   }
 
   async function getInvoice(invoiceId) {
@@ -119,7 +128,9 @@ export function createPayPal(env = process.env) {
     if (mode === 'mock') {
       return { id: orderId, status: 'COMPLETED', mock: true, capture_id: 'CAP-MOCK-' + orderId };
     }
-    return call('/v2/checkout/orders/' + orderId + '/capture', { method: 'POST', body: '{}' });
+    const res = await call('/v2/checkout/orders/' + orderId + '/capture', { method: 'POST', body: '{}' });
+    const cap = res && res.purchase_units && res.purchase_units[0] && res.purchase_units[0].payments && res.purchase_units[0].payments.captures && res.purchase_units[0].payments.captures[0];
+    return { ...res, capture_id: (cap && cap.id) || res.capture_id || null };
   }
 
   // Webhook signature check. PayPal signs every notification; without this an attacker

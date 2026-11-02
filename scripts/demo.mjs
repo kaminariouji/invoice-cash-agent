@@ -15,8 +15,11 @@ const PORT = Number(process.env.DEMO_PORT || 8790);
 const BASE = 'http://127.0.0.1:' + PORT;
 const DATA_DIR = process.env.DEMO_DATA_DIR || join(tmpdir(), 'invoice-cash-agent-demo-' + process.pid);
 
+// A fresh number each run: PayPal rejects a duplicate invoice_number, so a fixed one
+// would only ever work once.
+const NUM = 'ACME-' + Date.now().toString(36).toUpperCase();
 const GOOD = [
-  'Acme Studio - invoice #ACME-1042',
+  'Acme Studio - invoice #' + NUM,
   'bill to billing@acme.example',
   'Design sprint - 1200.00',
   '2 x Landing page copy - 450.00',
@@ -25,7 +28,7 @@ const GOOD = [
 ].join('\n');
 
 const BAD = [
-  'Invoice #OOPS-7',
+  'Invoice #OOPS-' + Date.now().toString(36).toUpperCase(),
   'Retainer - 900.00',
   'Total 1200.00',
 ].join('\n');
@@ -112,8 +115,12 @@ async function main() {
 
     rule('5. capture the payment');
     const cap = await post('/api/capture', { orderId: ord.body.order.id });
-    say('   status         : ' + cap.body.capture.status);
-    say('   capture id     : ' + (cap.body.capture.capture_id || 'n/a'));
+    if (cap.body && cap.body.capture) {
+      say('   status         : ' + cap.body.capture.status);
+      say('   capture id     : ' + (cap.body.capture.capture_id || 'n/a'));
+    } else {
+      say('   capture        : ' + cap.status + ' ' + (cap.body.error || '') + ' (buyer has not approved the order yet)');
+    }
 
     rule('6. money that arrives through the emailed invoice instead');
     const hook = await post('/api/webhook', {
@@ -121,7 +128,7 @@ async function main() {
       event_type: 'INVOICING.INVOICE.PAID',
       resource: { id: 'INV2-MOCK-ACME-1042', amount: { value: '2100.00', currency_code: 'USD' } },
     }, { 'paypal-transmission-id': 'demo-' + Date.now() });
-    say('   webhook        : ' + hook.status + ' event ' + hook.body.event);
+    say('   webhook        : ' + hook.status + ' ' + (hook.body.event || hook.body.error || ''));
     say('   trail verify   : ' + JSON.stringify(hook.body.trail));
 
     rule('7. decision trail');
