@@ -83,7 +83,7 @@ async function main() {
 
     rule('1. read the invoice');
     say(GOOD.split('\n').map((l) => '   | ' + l).join('\n'));
-    const ex = await post('/api/extract', { text: GOOD });
+    const ex = await post('/api/extract', { text: GOOD, engine: 'llm' });
     say('   invoice number : ' + ex.body.invoice.invoiceNumber);
     say('   client         : ' + ex.body.invoice.clientEmail);
     say('   due            : net ' + ex.body.invoice.dueDays + ' days');
@@ -91,6 +91,7 @@ async function main() {
     say('   computed total : ' + (ex.body.invoice.totalCents / 100).toFixed(2));
     say('   printed total  : ' + (ex.body.invoice.declaredCents === null ? 'n/a' : (ex.body.invoice.declaredCents / 100).toFixed(2)));
     say('   matches        : ' + ex.body.invoice.totalMatchesDeclared);
+    say('   read by        : ' + (ex.body.invoice.engine || 'parser'));
     say('   verdict        : ' + ex.body.decision.verdict + ' (score ' + ex.body.decision.score + ')');
 
     rule('2. a document that must not be billed');
@@ -101,7 +102,7 @@ async function main() {
     say('   POST /api/invoice -> ' + blocked.status + ' ' + (blocked.body.error || ''));
 
     rule('3. extract the good invoice again and bill it');
-    await post('/api/extract', { text: GOOD });
+    await post('/api/extract', { text: GOOD, engine: 'llm' });
     const inv = await post('/api/invoice', {});
     say('   paypal invoice : ' + (inv.body.created && inv.body.created.id));
     say('   status         : ' + (inv.body.sent && inv.body.sent.status));
