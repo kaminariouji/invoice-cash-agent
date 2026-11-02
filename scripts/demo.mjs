@@ -113,15 +113,11 @@ async function main() {
     say('   order          : ' + ord.body.order.id);
     say('   approve link   : ' + (link ? link.href : 'n/a'));
 
-    rule('5. capture the payment');
-    const cap = await post('/api/capture', { orderId: ord.body.order.id });
-    if (cap.body && cap.body.capture) {
-      say('   status         : ' + cap.body.capture.status);
-      say('   capture id     : ' + (cap.body.capture.capture_id || 'n/a'));
-    } else {
-      say('   capture        : ' + cap.status + ' ' + (cap.body.error || '') + ' (buyer has not approved the order yet)');
-    }
-
+    rule('5. the client pays the emailed invoice');
+    const paid = await post('/api/paid', {});
+    say('   payment        : ' + (paid.body.paid && paid.body.paid.payment_id));
+    say('   invoice status : ' + (paid.body.paid && paid.body.paid.status));
+    say('   thanks         : ' + String(paid.body.thanks || '').slice(0, 70));
     rule('6. money that arrives through the emailed invoice instead');
     const hook = await post('/api/webhook', {
       id: 'WH-EVT-1',
@@ -129,7 +125,7 @@ async function main() {
       resource: { id: 'INV2-MOCK-ACME-1042', amount: { value: '2100.00', currency_code: 'USD' } },
     }, { 'paypal-transmission-id': 'demo-' + Date.now() });
     say('   webhook        : ' + hook.status + ' ' + (hook.body.event || hook.body.error || ''));
-    say('   trail verify   : ' + JSON.stringify(hook.body.trail));
+    say('   trail verify   : ' + (hook.body.trail ? JSON.stringify(hook.body.trail) : 'not touched - the unsigned event never reached the trail'));
 
     rule('7. decision trail');
     const t = await fetch(BASE + '/api/trail').then((r) => r.json());

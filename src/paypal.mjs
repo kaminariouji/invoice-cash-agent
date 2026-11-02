@@ -99,6 +99,18 @@ export function createPayPal(env = process.env) {
     };
   }
 
+  // Record money that arrived outside the checkout flow (bank transfer, cash, a manual
+  // payment into the account). PayPal marks the invoice paid and returns an id.
+  async function recordPayment(invoiceId, amount, currency = 'USD', note) {
+    if (mode === 'mock') return { payment_id: 'EXTR-MOCK-' + invoiceId, status: 'MARKED_AS_PAID', mock: true };
+    const res = await call('/v2/invoicing/invoices/' + invoiceId + '/payments', {
+      method: 'POST',
+      body: JSON.stringify({ method: 'BANK_TRANSFER', amount: { currency_code: currency, value: Number(amount).toFixed(2) }, note }),
+    });
+    const inv = await call('/v2/invoicing/invoices/' + invoiceId);
+    return { payment_id: res && res.payment_id, status: inv && inv.status };
+  }
+
   async function getInvoice(invoiceId) {
     if (mode === 'mock') return { id: invoiceId, status: 'SENT', mock: true };
     return call('/v2/invoicing/invoices/' + invoiceId);
@@ -161,5 +173,5 @@ export function createPayPal(env = process.env) {
     }
   }
 
-  return { mode, verifyWebhook, createInvoice, sendInvoice, getInvoice, createOrder, captureOrder };
+  return { mode, verifyWebhook, createInvoice, sendInvoice, getInvoice, createOrder, captureOrder, recordPayment };
 }

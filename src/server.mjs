@@ -86,10 +86,22 @@ const routes = {
     });
     const sent = await paypal.sendInvoice(created.id);
     state.invoices.push({ ...invoice, paypalId: created.id });
+    state.lastInvoice.paypalId = created.id;
     store.append({ step: 'invoice.sent', invoiceNumber: invoice.invoiceNumber, paypalId: created.id, totalCents: invoice.totalCents });
     return json(res, 200, { created, sent, mode: paypal.mode });
   },
 
+  // Money that arrives without the one-tap link: the client paid the emailed invoice.
+  'POST /api/paid': async (req, res) => {
+    const invoice = state.lastInvoice;
+    if (!invoice) return json(res, 400, { error: 'extract first' });
+    const body = await readBody(req);
+    const invoiceId = body.invoiceId || (invoice.paypalId || null);
+    if (!invoiceId) return json(res, 400, { error: 'no invoice has been sent yet' });
+    const paid = await paypal.recordPayment(invoiceId, invoice.totalCents / 100, invoice.currency, 'recorded by the agent');
+    store.append({ step: 'payment.received', invoiceNumber: invoice.invoiceNumber, paypalId: invoiceId, paymentId: paid.payment_id, status: paid.status });
+    return json(res, 200, { paid, thanks: thanksMessage(invoice), mode: paypal.mode });
+  },
   'POST /api/order': async (req, res) => {
     const invoice = state.lastInvoice;
     if (!invoice) return json(res, 400, { error: 'extract first' });
